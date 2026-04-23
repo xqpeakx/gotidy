@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -191,7 +192,7 @@ func TestOrganize_VerboseLoggingIsInvoked(t *testing.T) {
 	opts := Options{
 		Verbose: true,
 		Logf: func(format string, args ...any) {
-			messages = append(messages, format)
+			messages = append(messages, fmt.Sprintf(format, args...))
 		},
 	}
 
@@ -201,5 +202,8 @@ func TestOrganize_VerboseLoggingIsInvoked(t *testing.T) {
 
 	if len(messages) == 0 {
 		t.Error("expected at least one verbose log message, got none")
+	}
+	if got := messages[0]; got != "moved photo.jpg to images/" {
+		t.Fatalf("first verbose log = %q, want %q", got, "moved photo.jpg to images/")
 	}
 }

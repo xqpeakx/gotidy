@@ -76,8 +76,11 @@ func TestRun_DryRunSummary(t *testing.T) {
 	}
 
 	output := stdout.String()
-	if !strings.Contains(output, "Would move 2 file(s) in "+dir+" (0 skipped).") {
+	if !strings.Contains(output, "Dry run: would move 2 files in "+dir+".") {
 		t.Fatalf("stdout = %q, want dry-run summary", output)
+	}
+	if !strings.Contains(output, "By category:") {
+		t.Fatalf("stdout = %q, want category heading", output)
 	}
 	if !strings.Contains(output, "documents:") || !strings.Contains(output, "images:") {
 		t.Fatalf("stdout = %q, want category counts", output)
@@ -102,5 +105,23 @@ func TestRun_NonExistentDirectory(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "error: cannot access") {
 		t.Fatalf("stderr = %q, want access error", stderr.String())
+	}
+}
+
+func TestRun_EmptyDirectorySummary(t *testing.T) {
+	dir := t.TempDir()
+
+	var stdout, stderr bytes.Buffer
+
+	code := run([]string{dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("run(empty dir) exit code = %d, want 0", code)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	if got, want := stdout.String(), "Nothing to do in "+dir+".\n"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
 	}
 }

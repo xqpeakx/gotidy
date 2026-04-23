@@ -1,3 +1,3 @@
-module github.com/yourusername/gotidy
+module github.com/xqpeakx/gotidy
 
 go 1.21

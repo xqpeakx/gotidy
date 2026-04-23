@@ -17,14 +17,18 @@ const usage = `gotidy - sort files in a directory into subfolders by type
 Usage:
   gotidy [flags] [directory]
 
-If no directory is given, the current working directory is used.
-Subdirectories, hidden files, and symlinks are left untouched.
+If you do not pass a directory, gotidy uses the current one.
+
+What it does:
+  - moves top-level files into folders like images/, documents/, code/, and more
+  - leaves subdirectories, hidden files, and symlinks alone
+  - skips files when the destination already has the same name
 
 Flags:
-  -n, --dry-run    Preview the moves without touching any files
-  -v, --verbose    Print every considered file
-  -V, --version    Print the gotidy version and exit
-  -h, --help       Show this help message
+  -n, --dry-run    Show what would move without changing anything
+  -v, --verbose    Print each decision as gotidy works
+  -V, --version    Show the gotidy version and exit
+  -h, --help       Show this help text
 
 Examples:
   gotidy ~/Downloads
@@ -95,16 +99,33 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 func printSummary(out io.Writer, dir string, s Summary, dryRun bool) {
-	verb := "Moved"
+	verb := "Organized"
 	if dryRun {
-		verb = "Would move"
+		verb = "Dry run: would move"
 	}
 
-	fmt.Fprintf(out, "%s %d file(s) in %s (%d skipped).\n", verb, s.Moved, dir, s.Skipped)
+	if s.Moved == 0 {
+		prefix := "Nothing to do in"
+		if dryRun {
+			prefix = "Dry run: nothing to move in"
+		}
+		fmt.Fprintf(out, "%s %s.\n", prefix, dir)
+		if s.Skipped > 0 {
+			fmt.Fprintf(out, "Skipped %s.\n", countLabel(s.Skipped, "file", "files"))
+		}
+		return
+	}
+
+	fmt.Fprintf(out, "%s %s in %s.\n", verb, countLabel(s.Moved, "file", "files"), dir)
+	if s.Skipped > 0 {
+		fmt.Fprintf(out, "Skipped %s.\n", countLabel(s.Skipped, "file", "files"))
+	}
 
 	if len(s.ByCategory) == 0 {
 		return
 	}
+
+	fmt.Fprintln(out, "By category:")
 
 	categories := make([]string, 0, len(s.ByCategory))
 	for c := range s.ByCategory {
@@ -115,4 +136,11 @@ func printSummary(out io.Writer, dir string, s Summary, dryRun bool) {
 	for _, c := range categories {
 		fmt.Fprintf(out, "  %-14s %d\n", c+":", s.ByCategory[c])
 	}
+}
+
+func countLabel(n int, singular, plural string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, singular)
+	}
+	return fmt.Sprintf("%d %s", n, plural)
 }

@@ -1,14 +1,18 @@
 # gotidy
 
-A tiny command-line tool that sorts the files in a directory into subfolders
-by type. Point it at a messy `Downloads` folder and it will neatly tuck every
-file into `images/`, `documents/`, `code/`, and friends.
+`gotidy` is a small command-line tool for cleaning up a messy folder.
+Point it at something like `~/Downloads`, and it will sort the loose files
+into folders such as `images/`, `documents/`, `audio/`, and `code/`.
 
-```
+It is meant to be boring in the best way: fast, predictable, and careful
+about not touching things it should leave alone.
+
+```text
+Before                        After
 Downloads/                    Downloads/
 ├── photo.jpg                 ├── images/
 ├── report.pdf                │   └── photo.jpg
-├── song.mp3         →        ├── documents/
+├── song.mp3         ->       ├── documents/
 ├── script.go                 │   └── report.pdf
 └── backup.zip                ├── audio/
                               │   └── song.mp3
@@ -18,103 +22,115 @@ Downloads/                    Downloads/
                                   └── backup.zip
 ```
 
-## Features
+## Why use it
 
-- Sorts files into nine categories: `images`, `documents`, `spreadsheets`,
-  `presentations`, `videos`, `audio`, `archives`, `code`, and `other`.
-- Safe by default — leaves subdirectories, hidden files, and symlinks alone,
-  and never overwrites an existing file at the destination.
-- `--dry-run` mode so you can preview every move before committing.
-- Zero dependencies outside the Go standard library.
+- Cleans up a folder in one command.
+- Gives you a `--dry-run` mode before it changes anything.
+- Leaves hidden files, subdirectories, and symlinks alone.
+- Never overwrites an existing file in the destination folder.
+- Uses only the Go standard library.
 
 ## Install
 
-### From source (requires Go 1.21+)
+### `go install`
 
 ```sh
-git clone https://github.com/yourusername/gotidy.git
+go install github.com/xqpeakx/gotidy@latest
+```
+
+### Build from source
+
+```sh
+git clone https://github.com/xqpeakx/gotidy.git
 cd gotidy
 go build -o gotidy .
 ```
 
-Then move the `gotidy` binary somewhere on your `PATH` (for example
-`/usr/local/bin` on macOS/Linux).
+If you want to run it like a normal command, move the binary somewhere on
+your `PATH`.
 
-### With `go install`
+## Quick start
 
-```sh
-go install github.com/yourusername/gotidy@latest
-```
-
-## Usage
-
-```sh
-gotidy [flags] [directory]
-```
-
-If no directory is given, the current working directory is used.
-
-| Flag              | Description                                |
-| ----------------- | ------------------------------------------ |
-| `-n`, `--dry-run` | Preview what would move; don't touch files |
-| `-v`, `--verbose` | Print every considered file                |
-| `-V`, `--version` | Print the gotidy version and exit          |
-| `-h`, `--help`    | Show the help message                      |
-
-### Examples
-
-Preview what would happen to your Downloads folder:
+See what would happen first:
 
 ```sh
 gotidy --dry-run ~/Downloads
 ```
 
-Actually organize it, with verbose output:
+If the preview looks right, run it for real:
 
 ```sh
-gotidy -v ~/Downloads
+gotidy ~/Downloads
 ```
 
-Organize the current directory:
+If you want to see every decision as it happens:
 
 ```sh
-gotidy
+gotidy --verbose ~/Downloads
 ```
 
-## How it decides categories
+If you do not pass a directory, `gotidy` uses the current one.
 
-Each file is categorised by its extension. The full mapping lives in
-[`categories.go`](./categories.go); here are a few highlights:
+## What it sorts
 
-| Category        | Example extensions                              |
-| --------------- | ----------------------------------------------- |
-| `images`        | `jpg`, `png`, `gif`, `svg`, `webp`              |
-| `documents`     | `pdf`, `docx`, `md`, `txt`                      |
-| `spreadsheets`  | `xlsx`, `csv`, `tsv`                            |
-| `presentations` | `pptx`, `key`                                   |
-| `videos`        | `mp4`, `mov`, `mkv`, `webm`                     |
-| `audio`         | `mp3`, `wav`, `flac`, `m4a`                     |
-| `archives`      | `zip`, `tar`, `gz`, `7z`                        |
-| `code`          | `go`, `py`, `js`, `ts`, `html`, `json`, `yaml`  |
-| `other`         | anything not listed above, and files with no ext |
+`gotidy` groups files into these folders:
 
-Extension matching is case-insensitive, so `Photo.JPG` and `photo.jpg` land
+- `images`
+- `documents`
+- `spreadsheets`
+- `presentations`
+- `videos`
+- `audio`
+- `archives`
+- `code`
+- `other`
+
+It decides based on file extension. The full mapping lives in
+[`categories.go`](./categories.go).
+
+Some examples:
+
+| Folder | Example extensions |
+| --- | --- |
+| `images` | `jpg`, `png`, `gif`, `svg`, `webp` |
+| `documents` | `pdf`, `docx`, `md`, `txt` |
+| `spreadsheets` | `xlsx`, `csv`, `tsv` |
+| `presentations` | `pptx`, `key` |
+| `videos` | `mp4`, `mov`, `mkv`, `webm` |
+| `audio` | `mp3`, `wav`, `flac`, `m4a` |
+| `archives` | `zip`, `tar`, `gz`, `7z` |
+| `code` | `go`, `py`, `js`, `ts`, `html`, `json`, `yaml` |
+| `other` | anything not listed above, plus files with no extension |
+
+Extension matching is case-insensitive, so `Photo.JPG` and `photo.jpg` end up
 in the same place.
 
-## Safety
+## What it will not do
 
-`gotidy` is deliberately conservative:
+`gotidy` is intentionally conservative.
 
-- It only moves top-level **regular files**. Subdirectories, symlinks, and
-  device files are left in place.
-- Hidden files (those whose name starts with a `.`) are never moved, so your
-  `.env` and `.DS_Store` are safe.
-- If a file with the same name already exists at the destination, `gotidy`
-  skips it rather than overwriting.
-- `--dry-run` lets you see exactly what would happen before committing.
+- It only moves top-level regular files.
+- It leaves nested folders exactly as they are.
+- It leaves hidden files alone, including things like `.env` and `.DS_Store`.
+- It skips symlinks and other special files.
+- It skips a move if the destination already contains a file with that name.
 
-That said, file moves are permanent — use `--dry-run` first on directories
-whose contents you care about.
+If you are organizing a folder you care about, start with `--dry-run`.
+
+## Usage
+
+```text
+gotidy [flags] [directory]
+```
+
+Flags:
+
+| Flag | Description |
+| --- | --- |
+| `-n`, `--dry-run` | Show what would move without changing anything |
+| `-v`, `--verbose` | Print each decision as gotidy works |
+| `-V`, `--version` | Show the version and exit |
+| `-h`, `--help` | Show the help text |
 
 ## Development
 
@@ -124,7 +140,7 @@ Run the test suite:
 go test ./...
 ```
 
-Run tests with coverage:
+Run with coverage:
 
 ```sh
 go test -cover ./...
@@ -135,20 +151,6 @@ Format and vet before committing:
 ```sh
 go fmt ./...
 go vet ./...
-```
-
-## Project layout
-
-```
-gotidy/
-├── main.go             CLI entrypoint — flag parsing and summary output
-├── organizer.go        Core logic — scanning a directory and moving files
-├── categories.go       Mapping from file extensions to category folders
-├── organizer_test.go   Unit tests for the organizer
-├── categories_test.go  Unit tests for the categoriser
-├── go.mod
-├── LICENSE             MIT
-└── README.md
 ```
 
 ## License

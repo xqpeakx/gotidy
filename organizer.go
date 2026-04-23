@@ -39,7 +39,7 @@ func Organize(dir string, opts Options) (Summary, error) {
 		name := entry.Name()
 
 		if shouldSkip(entry) {
-			opts.logf("skip %s (directory, hidden, or special)", name)
+			opts.logf("left %s where it is (directory, hidden file, or special file)", name)
 			continue
 		}
 
@@ -49,7 +49,7 @@ func Organize(dir string, opts Options) (Summary, error) {
 		dstPath := filepath.Join(dstDir, name)
 
 		if _, err := os.Stat(dstPath); err == nil {
-			opts.logf("skip %s (already exists in %s/)", name, category)
+			opts.logf("left %s where it is (already exists in %s/)", name, category)
 			summary.Skipped++
 			continue
 		} else if !errors.Is(err, os.ErrNotExist) {
@@ -57,7 +57,7 @@ func Organize(dir string, opts Options) (Summary, error) {
 		}
 
 		if opts.DryRun {
-			opts.logf("[dry-run] would move %s -> %s/", name, category)
+			opts.logf("[dry-run] would move %s to %s/", name, category)
 		} else {
 			if err := os.MkdirAll(dstDir, 0o755); err != nil {
 				return summary, fmt.Errorf("cannot create %q: %w", dstDir, err)
@@ -65,7 +65,7 @@ func Organize(dir string, opts Options) (Summary, error) {
 			if err := os.Rename(srcPath, dstPath); err != nil {
 				return summary, fmt.Errorf("cannot move %q to %q: %w", srcPath, dstPath, err)
 			}
-			opts.logf("moved %s -> %s/", name, category)
+			opts.logf("moved %s to %s/", name, category)
 		}
 
 		summary.Moved++
