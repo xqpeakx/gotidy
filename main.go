@@ -6,12 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime/debug"
 	"sort"
-	"strings"
 )
 
-// version is set at build time via -ldflags "-X main.version=...".
+// version is displayed by --version.
 var version = "alpha_0.0.1"
 
 const usage = `gotidy - sort files in a directory into subfolders by type
@@ -73,7 +71,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if showVersion {
-		fmt.Fprintf(stdout, "gotidy %s\n", resolvedVersion())
+		fmt.Fprintf(stdout, "gotidy %s\n", version)
 		return 0
 	}
 
@@ -203,49 +201,4 @@ func countLabel(n int, singular, plural string) string {
 		return fmt.Sprintf("%d %s", n, singular)
 	}
 	return fmt.Sprintf("%d %s", n, plural)
-}
-
-func resolvedVersion() string {
-	if version != "" && version != "dev" {
-		return version
-	}
-
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return version
-	}
-
-	if info.Main.Version != "" && info.Main.Version != "(devel)" {
-		return info.Main.Version
-	}
-
-	revision := buildSetting(info, "vcs.revision")
-	if revision == "" {
-		return version
-	}
-
-	shortRevision := revision
-	if len(shortRevision) > 7 {
-		shortRevision = shortRevision[:7]
-	}
-
-	suffix := shortRevision
-	if buildSetting(info, "vcs.modified") == "true" {
-		suffix += "-dirty"
-	}
-
-	if version == "" {
-		return suffix
-	}
-
-	return strings.Join([]string{version, suffix}, "+")
-}
-
-func buildSetting(info *debug.BuildInfo, key string) string {
-	for _, setting := range info.Settings {
-		if setting.Key == key {
-			return setting.Value
-		}
-	}
-	return ""
 }

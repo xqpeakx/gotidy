@@ -44,16 +44,6 @@ func TestRun_Version(t *testing.T) {
 	}
 }
 
-func TestResolvedVersion_UsesInjectedVersion(t *testing.T) {
-	oldVersion := version
-	version = "1.2.3"
-	t.Cleanup(func() { version = oldVersion })
-
-	if got, want := resolvedVersion(), "1.2.3"; got != want {
-		t.Fatalf("resolvedVersion() = %q, want %q", got, want)
-	}
-}
-
 func TestRun_Undo(t *testing.T) {
 	dir := t.TempDir()
 	writeFiles(t, dir, "photo.jpg")
