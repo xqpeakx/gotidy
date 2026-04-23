@@ -12,12 +12,13 @@ import (
 
 const (
 	undoManifestName    = ".gotidy-last-run.json"
-	undoManifestVersion = 1
+	undoManifestVersion = 2
 )
 
 type moveRecord struct {
-	From string `json:"from"`
-	To   string `json:"to"`
+	From     string `json:"from"`
+	To       string `json:"to"`
+	Category string `json:"category,omitempty"`
 }
 
 type undoManifest struct {
@@ -27,7 +28,10 @@ type undoManifest struct {
 }
 
 func Undo(dir string, opts Options) (Summary, error) {
-	summary := Summary{ByCategory: make(map[string]int)}
+	summary := Summary{
+		ByCategory:      make(map[string]int),
+		ByCategoryBytes: make(map[string]int64),
+	}
 
 	if err := ensureDirectory(dir); err != nil {
 		return summary, err
@@ -47,7 +51,10 @@ func Undo(dir string, opts Options) (Summary, error) {
 		}
 
 		name := filepath.Base(srcPath)
-		category := filepath.Base(filepath.Dir(dstPath))
+		category := move.Category
+		if category == "" {
+			category = filepath.Base(filepath.Dir(dstPath))
+		}
 
 		if _, err := os.Stat(srcPath); err == nil {
 			opts.logf("left %s where it is (already exists at the original location)", name)
@@ -58,7 +65,8 @@ func Undo(dir string, opts Options) (Summary, error) {
 			return summary, saveUndoStateOnError(dir, manifest.Moves, i, remaining, fmt.Errorf("cannot access %q: %w", srcPath, err))
 		}
 
-		if _, err := os.Stat(dstPath); errors.Is(err, os.ErrNotExist) {
+		dstInfo, err := os.Stat(dstPath)
+		if errors.Is(err, os.ErrNotExist) {
 			opts.logf("left %s where it is (expected in %s/, but it is missing)", name, category)
 			summary.Skipped++
 			remaining = append(remaining, move)
@@ -74,11 +82,13 @@ func Undo(dir string, opts Options) (Summary, error) {
 				return summary, saveUndoStateOnError(dir, manifest.Moves, i, remaining, fmt.Errorf("cannot move %q back to %q: %w", dstPath, srcPath, err))
 			}
 			opts.logf("moved %s back from %s/", name, category)
-			_ = os.Remove(filepath.Dir(dstPath))
+			_ = removeEmptyParents(dir, filepath.Dir(dstPath))
 		}
 
 		summary.Moved++
+		summary.TotalBytes += dstInfo.Size()
 		summary.ByCategory[category]++
+		summary.ByCategoryBytes[category] += dstInfo.Size()
 	}
 
 	if opts.DryRun {
@@ -151,7 +161,7 @@ func readUndoManifest(dir string) (undoManifest, error) {
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return undoManifest{}, fmt.Errorf("cannot parse undo data in %q: %w", path, err)
 	}
-	if manifest.Version != 0 && manifest.Version != undoManifestVersion {
+	if manifest.Version != 0 && manifest.Version != 1 && manifest.Version != undoManifestVersion {
 		return undoManifest{}, fmt.Errorf("cannot use undo data in %q: unsupported version %d", path, manifest.Version)
 	}
 	if len(manifest.Moves) == 0 {
@@ -233,5 +243,27 @@ func safeJoin(root, rel string) (string, error) {
 func reverseMoveRecords(moves []moveRecord) {
 	for i, j := 0, len(moves)-1; i < j; i, j = i+1, j-1 {
 		moves[i], moves[j] = moves[j], moves[i]
+	}
+}
+
+func removeEmptyParents(root, start string) error {
+	current := start
+	for {
+		if current == root || current == "." || current == string(os.PathSeparator) {
+			return nil
+		}
+		err := os.Remove(current)
+		if err == nil {
+			current = filepath.Dir(current)
+			continue
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			current = filepath.Dir(current)
+			continue
+		}
+		if errors.Is(err, os.ErrPermission) {
+			return err
+		}
+		return nil
 	}
 }

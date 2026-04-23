@@ -21,10 +21,10 @@ func TestOrganize_WritesUndoManifest(t *testing.T) {
 	if len(manifest.Moves) != 2 {
 		t.Fatalf("len(manifest.Moves) = %d, want 2", len(manifest.Moves))
 	}
-	if got, want := manifest.Moves[0], (moveRecord{From: "notes.md", To: "documents/notes.md"}); got != want {
+	if got, want := manifest.Moves[0], (moveRecord{From: "notes.md", To: "documents/notes.md", Category: "documents"}); got != want {
 		t.Fatalf("manifest.Moves[0] = %#v, want %#v", got, want)
 	}
-	if got, want := manifest.Moves[1], (moveRecord{From: "photo.jpg", To: "images/photo.jpg"}); got != want {
+	if got, want := manifest.Moves[1], (moveRecord{From: "photo.jpg", To: "images/photo.jpg", Category: "images"}); got != want {
 		t.Fatalf("manifest.Moves[1] = %#v, want %#v", got, want)
 	}
 }
@@ -102,5 +102,36 @@ func TestUndo_KeepsManifestWhenOriginalLocationIsOccupied(t *testing.T) {
 	}
 	if _, err := readUndoManifest(dir); err != nil {
 		t.Fatalf("undo manifest should remain for a skipped file: %v", err)
+	}
+}
+
+func TestUndo_RestoresRenamedCollisionTarget(t *testing.T) {
+	dir := t.TempDir()
+
+	if err := os.Mkdir(filepath.Join(dir, "images"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	writeFiles(t, filepath.Join(dir, "images"), "photo.jpg")
+	writeFiles(t, dir, "photo.jpg")
+
+	if _, err := Organize(dir, Options{CollisionStrategy: DuplicateRename}); err != nil {
+		t.Fatalf("Organize: %v", err)
+	}
+
+	summary, err := Undo(dir, Options{})
+	if err != nil {
+		t.Fatalf("Undo: %v", err)
+	}
+	if summary.Moved != 1 {
+		t.Fatalf("Moved = %d, want 1", summary.Moved)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "photo.jpg")); err != nil {
+		t.Fatalf("photo.jpg should be restored: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "images", "photo.jpg")); err != nil {
+		t.Fatalf("pre-existing images/photo.jpg should remain: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "images", "photo_1.jpg")); !os.IsNotExist(err) {
+		t.Fatalf("renamed destination should be gone after undo, stat err = %v", err)
 	}
 }
