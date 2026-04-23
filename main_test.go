@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,6 +42,51 @@ func TestRun_Version(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRun_Update(t *testing.T) {
+	oldUpdater := selfUpdate
+	t.Cleanup(func() { selfUpdate = oldUpdater })
+
+	called := false
+	selfUpdate = func(stdout, stderr io.Writer) error {
+		called = true
+		_, _ = io.WriteString(stdout, "updated\n")
+		return nil
+	}
+
+	var stdout, stderr bytes.Buffer
+
+	code := run([]string{"--update"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("run(--update) exit code = %d, want 0", code)
+	}
+	if !called {
+		t.Fatal("expected selfUpdate to be called")
+	}
+	if got, want := stdout.String(), "updated\n"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRun_UpdateCannotBeCombined(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+
+	code := run([]string{"--update", "--verbose"}, &stdout, &stderr)
+
+	if code != 2 {
+		t.Fatalf("run(--update --verbose) exit code = %d, want 2", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "--update cannot be combined") {
+		t.Fatalf("stderr = %q, want update usage error", stderr.String())
 	}
 }
 

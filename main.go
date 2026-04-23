@@ -9,7 +9,6 @@ import (
 	"sort"
 )
 
-// version is displayed by --version.
 var version = "alpha_0.0.1"
 
 const usage = `gotidy - sort files in a directory into subfolders by type
@@ -28,6 +27,7 @@ What it does:
 Flags:
   -n, --dry-run    Show what would move without changing anything
   -u, --undo       Undo the last organize run in this directory
+  --update         Install the newest gotidy from main
   -v, --verbose    Print each decision as gotidy works
   -V, --version    Show the gotidy version and exit
   -h, --help       Show this help text
@@ -36,6 +36,7 @@ Examples:
   gotidy ~/Downloads
   gotidy --dry-run ~/Downloads
   gotidy --undo ~/Downloads
+  gotidy --update
   gotidy -v .
 `
 
@@ -51,6 +52,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	var (
 		dryRun      bool
 		undo        bool
+		update      bool
 		verbose     bool
 		showVersion bool
 	)
@@ -58,6 +60,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.BoolVar(&dryRun, "n", false, "preview moves without touching files (shorthand)")
 	fs.BoolVar(&undo, "undo", false, "undo the last organize run in this directory")
 	fs.BoolVar(&undo, "u", false, "undo the last organize run in this directory (shorthand)")
+	fs.BoolVar(&update, "update", false, "install the newest gotidy from main")
 	fs.BoolVar(&verbose, "verbose", false, "print every considered file")
 	fs.BoolVar(&verbose, "v", false, "print every considered file (shorthand)")
 	fs.BoolVar(&showVersion, "version", false, "print the gotidy version")
@@ -72,6 +75,19 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	if showVersion {
 		fmt.Fprintf(stdout, "gotidy %s\n", version)
+		return 0
+	}
+
+	if update {
+		if dryRun || undo || verbose || fs.NArg() > 0 {
+			fmt.Fprintln(stderr, "error: --update cannot be combined with other flags or a directory argument")
+			fmt.Fprint(stderr, usage)
+			return 2
+		}
+		if err := selfUpdate(stdout, stderr); err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
 		return 0
 	}
 

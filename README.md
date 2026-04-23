@@ -176,9 +176,32 @@ Flags:
 | --- | --- |
 | `-n`, `--dry-run` | Show what would move without changing anything |
 | `-u`, `--undo` | Restore the last real run in this directory |
+| `--update` | Install the newest `main` branch build with `go install` |
 | `-v`, `--verbose` | Print each decision as gotidy works |
 | `-V`, `--version` | Show the version and exit |
 | `-h`, `--help` | Show the help text |
+
+## Updating
+
+If you installed `gotidy` with Go, you can update it from the tool itself:
+
+```sh
+gotidy --update
+```
+
+This runs `go install github.com/xqpeakx/gotidy@main` with `GOPROXY=direct`,
+so it tracks the newest pushed commit on `main` instead of waiting for the Go
+module proxy to catch up.
+
+It replaces the current `gotidy` executable you are running. That means if
+your shell is using `/usr/local/bin/gotidy`, `--update` replaces that exact
+binary instead of only updating `$(go env GOPATH)/bin/gotidy`.
+
+`--update` still requires:
+
+- `go` to be installed
+- network access to GitHub
+- write permission to the current `gotidy` binary path
 
 ## Development
 
