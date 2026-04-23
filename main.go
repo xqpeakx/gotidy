@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-var version = "alpha_0.0.5"
+var version = "alpha_0.0.6"
 
 const usage = `gotidy - sort files in a directory into subfolders by type
 
@@ -26,6 +26,7 @@ If you do not pass a directory, gotidy uses the current one.
 What it does:
   - moves top-level files into folders like images/, documents/, code/, and more
   - can load custom category rules from .gotidy.yaml, .gotidy.yml, or .gotidy.json
+  - can switch named organization profiles with --profile
   - can learn extension and filename patterns over time with --learn
   - can use adaptive heuristics and optional content hints with --adaptive
   - can filter files with --include, --exclude, and .gotidyignore
@@ -49,6 +50,7 @@ Flags:
   --large-files-over SIZE Treat files at or above SIZE as large (default: 100MB)
   --learn                 Update local learning data from successful real runs
   --list-categories       Show the active category-to-extension mapping
+  --profile NAME          Load named settings from .gotidy.profiles.yaml/.json
   -n, --dry-run           Show what would move without changing anything
   --overwrite             Overwrite colliding destinations (interactive only)
   --rename                Rename colliding destinations with _N suffixes
@@ -63,6 +65,8 @@ Flags:
 
 Examples:
   gotidy ~/Downloads
+  gotidy --profile work ~/Downloads
+  gotidy --profile creative --list-categories ~/Projects
   gotidy --adaptive --classify budget.txt notes.txt
   gotidy --learn --config ~/.config/gotidy/work.yaml ~/Downloads
   gotidy --config ~/.config/gotidy/work.yaml ~/Downloads
@@ -107,6 +111,7 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		learn             bool
 		listCategories    bool
 		overwrite         bool
+		profileName       string
 		rename            bool
 		renameAlias       bool
 		skip              bool
@@ -135,6 +140,7 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs.BoolVar(&learn, "learn", false, "update local learning data from successful real runs")
 	fs.BoolVar(&listCategories, "list-categories", false, "show the active category mapping")
 	fs.BoolVar(&overwrite, "overwrite", false, "overwrite colliding destinations")
+	fs.StringVar(&profileName, "profile", "", "load named settings from .gotidy.profiles.yaml/.json")
 	fs.BoolVar(&rename, "rename", false, "rename colliding destinations with _N suffixes")
 	fs.BoolVar(&renameAlias, "rename-on-collision", false, "alias for --rename")
 	fs.BoolVar(&skip, "skip", false, "skip colliding destinations")
@@ -154,6 +160,11 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	setFlags := make(map[string]bool)
+	fs.Visit(func(f *flag.Flag) {
+		setFlags[f.Name] = true
+	})
+
 	if jsonOutput && verbose {
 		return usageError(stderr, "--json cannot be combined with --verbose")
 	}
@@ -161,24 +172,8 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return usageError(stderr, "--json cannot be combined with --interactive")
 	}
 
-	duplicateStrategy, err := resolveDuplicateStrategy(skip, rename, renameAlias, overwrite)
-	if err != nil {
-		return usageError(stderr, err.Error())
-	}
-	if duplicateStrategy == DuplicateOverwrite && !interactive {
-		return usageError(stderr, "--overwrite requires --interactive so each replacement is confirmed")
-	}
-
-	includePatterns := parsePatternList(includeRaw)
-	excludePatterns := parsePatternList(excludeRaw)
-	largeFileThreshold, err := parseSize(largeFilesOverRaw)
-	if err != nil {
-		fmt.Fprintf(stderr, "error: %v\n", err)
-		return 2
-	}
-
 	if showVersion {
-		if adaptive || backup || byDate || bySize || classify || contentHints || configPath != "" || dryRun || excludeRaw != "" || ignoreFilePath != "" || includeRaw != "" || interactive || learn || listCategories || overwrite || rename || renameAlias || skip || stats || undo || update || verbose || fs.NArg() > 0 {
+		if adaptive || backup || byDate || bySize || classify || contentHints || configPath != "" || dryRun || excludeRaw != "" || ignoreFilePath != "" || includeRaw != "" || interactive || learn || listCategories || overwrite || profileName != "" || rename || renameAlias || skip || stats || undo || update || verbose || fs.NArg() > 0 {
 			return usageError(stderr, "--version cannot be combined with other flags or arguments")
 		}
 		if jsonOutput {
@@ -193,7 +188,7 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	if update {
-		if adaptive || backup || byDate || bySize || classify || contentHints || configPath != "" || dryRun || excludeRaw != "" || ignoreFilePath != "" || includeRaw != "" || interactive || jsonOutput || learn || listCategories || overwrite || rename || renameAlias || skip || stats || undo || verbose || fs.NArg() > 0 {
+		if adaptive || backup || byDate || bySize || classify || contentHints || configPath != "" || dryRun || excludeRaw != "" || ignoreFilePath != "" || includeRaw != "" || interactive || jsonOutput || learn || listCategories || overwrite || profileName != "" || rename || renameAlias || skip || stats || undo || verbose || fs.NArg() > 0 {
 			return usageError(stderr, "--update cannot be combined with other flags or arguments")
 		}
 		if err := selfUpdate(stdout, stderr); err != nil {
@@ -211,7 +206,7 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return usageError(stderr, "--classify needs at least one filename")
 		}
 
-		resolver, loadedConfig, err := loadResolver(".", configPath)
+		resolver, loadedConfig, loadedProfile, err := loadResolver(".", configPath, profileName)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
 			return 1
@@ -248,6 +243,9 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			if loadedConfig != nil {
 				payload.ConfigPath = loadedConfig.Path
 			}
+			if loadedProfile != nil {
+				payload.ProfileName = loadedProfile.Name
+			}
 			if err := writeJSON(stdout, payload); err != nil {
 				fmt.Fprintf(stderr, "error: %v\n", err)
 				return 1
@@ -255,7 +253,7 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 0
 		}
 
-		printClassifications(stdout, results, loadedConfig, categorizer)
+		printClassifications(stdout, results, loadedConfig, loadedProfile, categorizer)
 		return 0
 	}
 
@@ -272,7 +270,7 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			root = fs.Arg(0)
 		}
 
-		resolver, loadedConfig, err := loadResolver(root, configPath)
+		resolver, loadedConfig, loadedProfile, err := loadResolver(root, configPath, profileName)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
 			return 1
@@ -296,6 +294,9 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			if loadedConfig != nil {
 				payload.ConfigPath = loadedConfig.Path
 			}
+			if loadedProfile != nil {
+				payload.ProfileName = loadedProfile.Name
+			}
 			if err := writeJSON(stdout, payload); err != nil {
 				fmt.Fprintf(stderr, "error: %v\n", err)
 				return 1
@@ -303,12 +304,12 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			return 0
 		}
 
-		printCategoryList(stdout, definitions, learnedDefinitions, loadedConfig, categorizer)
+		printCategoryList(stdout, definitions, learnedDefinitions, loadedConfig, loadedProfile, categorizer)
 		return 0
 	}
 
 	if undo {
-		if adaptive || backup || byDate || bySize || contentHints || excludeRaw != "" || ignoreFilePath != "" || includeRaw != "" || interactive || learn || overwrite || rename || renameAlias || skip {
+		if adaptive || backup || byDate || bySize || contentHints || excludeRaw != "" || ignoreFilePath != "" || includeRaw != "" || interactive || learn || overwrite || profileName != "" || rename || renameAlias || skip {
 			return usageError(stderr, "--undo cannot be combined with organize-only flags")
 		}
 	}
@@ -320,6 +321,48 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		dir = fs.Arg(0)
 	default:
 		return usageError(stderr, "gotidy accepts at most one directory argument")
+	}
+
+	var (
+		resolver      CategoryResolver
+		loadedConfig  *LoadedConfig
+		loadedProfile *LoadedProfile
+	)
+
+	if !undo {
+		var err error
+		resolver, loadedConfig, loadedProfile, err = loadResolver(dir, configPath, profileName)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		applyProfileDefaults(setFlags, loadedProfile, &backup, &byDate, &bySize, &largeFilesOverRaw, &includeRaw, &excludeRaw)
+	}
+
+	duplicateStrategy, err := resolveDuplicateStrategy(skip, rename, renameAlias, overwrite)
+	if err != nil {
+		return usageError(stderr, err.Error())
+	}
+	if loadedProfile != nil && !duplicateFlagsSet(setFlags) {
+		loadedStrategy, ok, err := resolveProfileDuplicateStrategy(loadedProfile)
+		if err != nil {
+			fmt.Fprintf(stderr, "error: %v\n", err)
+			return 1
+		}
+		if ok {
+			duplicateStrategy = loadedStrategy
+		}
+	}
+	if duplicateStrategy == DuplicateOverwrite && !interactive {
+		return usageError(stderr, "--overwrite requires --interactive so each replacement is confirmed")
+	}
+
+	includePatterns := parsePatternList(includeRaw)
+	excludePatterns := parsePatternList(excludeRaw)
+	largeFileThreshold, err := parseSize(largeFilesOverRaw)
+	if err != nil {
+		fmt.Fprintf(stderr, "error: %v\n", err)
+		return 2
 	}
 
 	opts := Options{
@@ -340,12 +383,6 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if undo {
 		opts.Resolver = DefaultCategoryResolver()
 	} else {
-		resolver, loadedConfig, err := loadResolver(dir, configPath)
-		if err != nil {
-			fmt.Fprintf(stderr, "error: %v\n", err)
-			return 1
-		}
-
 		ignorePatterns, loadedIgnoreFile, err := loadIgnorePatterns(dir, ignoreFilePath)
 		if err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
@@ -355,6 +392,9 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		opts.IncludePatterns = includePatterns
 		opts.ExcludePatterns = excludePatterns
 		opts.IgnorePatterns = ignorePatterns
+		if loadedProfile != nil && len(loadedProfile.Profile.IgnorePatterns) > 0 {
+			opts.IgnorePatterns = append(opts.IgnorePatterns, loadedProfile.Profile.IgnorePatterns...)
+		}
 		opts.Resolver = resolver
 		categorizer, err := NewCategorizer(dir, resolver, adaptive, learn, contentHints)
 		if err != nil {
@@ -364,6 +404,9 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		opts.Categorizer = categorizer
 		if loadedConfig != nil {
 			opts.ConfigPath = loadedConfig.Path
+		}
+		if loadedProfile != nil {
+			opts.ProfileName = loadedProfile.Name
 		}
 		if loadedIgnoreFile != "" {
 			opts.IgnoreFilePath = loadedIgnoreFile
@@ -407,6 +450,7 @@ func runWithIO(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			ConfigPath:      summary.ConfigPath,
 			IgnoreFilePath:  summary.IgnoreFilePath,
 			LearningPath:    summary.LearningPath,
+			ProfileName:     summary.ProfileName,
 		}); err != nil {
 			fmt.Fprintf(stderr, "error: %v\n", err)
 			return 1
@@ -442,21 +486,87 @@ func resolveDuplicateStrategy(skip, rename, renameAlias, overwrite bool) (Duplic
 	return selected[0], nil
 }
 
-func loadResolver(root, configPath string) (CategoryResolver, *LoadedConfig, error) {
+func duplicateFlagsSet(setFlags map[string]bool) bool {
+	return boolFlagSet(setFlags, "skip", "rename", "rename-on-collision", "overwrite")
+}
+
+func boolFlagSet(setFlags map[string]bool, names ...string) bool {
+	for _, name := range names {
+		if setFlags[name] {
+			return true
+		}
+	}
+	return false
+}
+
+func applyProfileDefaults(setFlags map[string]bool, loadedProfile *LoadedProfile, backup, byDate, bySize *bool, largeFilesOverRaw, includeRaw, excludeRaw *string) {
+	if loadedProfile == nil {
+		return
+	}
+
+	profile := loadedProfile.Profile
+	if profile.Backup != nil && !boolFlagSet(setFlags, "backup") {
+		*backup = *profile.Backup
+	}
+	if profile.ByDate != nil && !boolFlagSet(setFlags, "by-date") {
+		*byDate = *profile.ByDate
+	}
+	if profile.BySize != nil && !boolFlagSet(setFlags, "by-size") {
+		*bySize = *profile.BySize
+	}
+	if profile.LargeFilesOver != "" && !boolFlagSet(setFlags, "large-files-over") {
+		*largeFilesOverRaw = profile.LargeFilesOver
+	}
+	if len(profile.Include) > 0 && !boolFlagSet(setFlags, "include") {
+		*includeRaw = strings.Join(profile.Include, ",")
+	}
+	if len(profile.Exclude) > 0 && !boolFlagSet(setFlags, "exclude") {
+		*excludeRaw = strings.Join(profile.Exclude, ",")
+	}
+}
+
+func resolveProfileDuplicateStrategy(loadedProfile *LoadedProfile) (DuplicateStrategy, bool, error) {
+	if loadedProfile == nil {
+		return "", false, nil
+	}
+
+	switch strings.ToLower(strings.TrimSpace(loadedProfile.Profile.DuplicateStrategy)) {
+	case "":
+		return "", false, nil
+	case "skip":
+		return DuplicateSkip, true, nil
+	case "rename", "rename-on-collision":
+		return DuplicateRename, true, nil
+	case "overwrite":
+		return DuplicateOverwrite, true, nil
+	default:
+		return "", false, fmt.Errorf("profile %q uses unsupported duplicate_strategy %q", loadedProfile.Name, loadedProfile.Profile.DuplicateStrategy)
+	}
+}
+
+func loadResolver(root, configPath, profileName string) (CategoryResolver, *LoadedConfig, *LoadedProfile, error) {
 	loadedConfig, err := LoadConfig(root, configPath)
 	if err != nil {
-		return CategoryResolver{}, nil, err
+		return CategoryResolver{}, nil, nil, err
 	}
 
 	if loadedConfig == nil {
-		return DefaultCategoryResolver(), nil, nil
+		if profileName != "" {
+			return CategoryResolver{}, nil, nil, fmt.Errorf("profile %q was requested, but no gotidy config was found in %q", profileName, root)
+		}
+		return DefaultCategoryResolver(), nil, nil, nil
 	}
 
-	resolver, err := NewCategoryResolver(&loadedConfig.Config)
+	effectiveConfig, loadedProfile, err := loadedConfig.Config.Effective(profileName)
 	if err != nil {
-		return CategoryResolver{}, nil, fmt.Errorf("cannot build category resolver from %q: %w", loadedConfig.Path, err)
+		return CategoryResolver{}, nil, nil, fmt.Errorf("cannot activate profile from %q: %w", loadedConfig.Path, err)
 	}
-	return resolver, loadedConfig, nil
+
+	resolver, err := NewCategoryResolver(&effectiveConfig)
+	if err != nil {
+		return CategoryResolver{}, nil, nil, fmt.Errorf("cannot build category resolver from %q: %w", loadedConfig.Path, err)
+	}
+	return resolver, loadedConfig, loadedProfile, nil
 }
 
 func usageError(stderr io.Writer, message string) int {
@@ -579,6 +689,9 @@ func printContext(out io.Writer, s Summary) {
 	if s.ConfigPath != "" {
 		fmt.Fprintf(out, "Loaded config from %s.\n", s.ConfigPath)
 	}
+	if s.ProfileName != "" {
+		fmt.Fprintf(out, "Active profile: %s.\n", s.ProfileName)
+	}
 	if s.IgnoreFilePath != "" {
 		fmt.Fprintf(out, "Loaded ignore rules from %s.\n", s.IgnoreFilePath)
 	}
@@ -629,7 +742,7 @@ func printAdaptiveSummary(out io.Writer, adaptiveMatches int, dryRun bool) {
 	fmt.Fprintf(out, "%s %s.\n", verb, countLabel(adaptiveMatches, "file", "files"))
 }
 
-func printCategoryList(out io.Writer, categories, learnedCategories []CategoryDefinition, loadedConfig *LoadedConfig, categorizer *Categorizer) {
+func printCategoryList(out io.Writer, categories, learnedCategories []CategoryDefinition, loadedConfig *LoadedConfig, loadedProfile *LoadedProfile, categorizer *Categorizer) {
 	fmt.Fprintln(out, "Categories:")
 	for _, category := range categories {
 		label := category.Name + ":"
@@ -651,12 +764,15 @@ func printCategoryList(out io.Writer, categories, learnedCategories []CategoryDe
 	if loadedConfig != nil {
 		fmt.Fprintf(out, "Loaded config from %s.\n", loadedConfig.Path)
 	}
+	if loadedProfile != nil {
+		fmt.Fprintf(out, "Active profile: %s.\n", loadedProfile.Name)
+	}
 	if categorizer != nil && categorizer.LearningPath() != "" {
 		fmt.Fprintf(out, "Learning data at %s.\n", categorizer.LearningPath())
 	}
 }
 
-func printClassifications(out io.Writer, results []classificationResult, loadedConfig *LoadedConfig, categorizer *Categorizer) {
+func printClassifications(out io.Writer, results []classificationResult, loadedConfig *LoadedConfig, loadedProfile *LoadedProfile, categorizer *Categorizer) {
 	for _, result := range results {
 		line := fmt.Sprintf("%s: %s", result.Input, result.Category)
 		if result.Destination != "" && result.Destination != result.Category {
@@ -673,6 +789,9 @@ func printClassifications(out io.Writer, results []classificationResult, loadedC
 	}
 	if loadedConfig != nil {
 		fmt.Fprintf(out, "Loaded config from %s.\n", loadedConfig.Path)
+	}
+	if loadedProfile != nil {
+		fmt.Fprintf(out, "Active profile: %s.\n", loadedProfile.Name)
 	}
 	if categorizer != nil && categorizer.LearningPath() != "" {
 		fmt.Fprintf(out, "Learning data at %s.\n", categorizer.LearningPath())
@@ -709,6 +828,7 @@ func makePrompter(in io.Reader, out io.Writer) func(prompt string) (string, erro
 type summaryOutput struct {
 	Mode            string           `json:"mode"`
 	Directory       string           `json:"directory"`
+	ProfileName     string           `json:"profile_name,omitempty"`
 	DryRun          bool             `json:"dry_run"`
 	Examined        int              `json:"examined"`
 	Moved           int              `json:"moved"`
@@ -729,6 +849,7 @@ type summaryOutput struct {
 type categoryListOutput struct {
 	Mode              string               `json:"mode"`
 	ConfigPath        string               `json:"config_path,omitempty"`
+	ProfileName       string               `json:"profile_name,omitempty"`
 	LearningPath      string               `json:"learning_path,omitempty"`
 	AdaptiveRequested bool                 `json:"adaptive_requested"`
 	Categories        []CategoryDefinition `json:"categories"`
@@ -747,6 +868,7 @@ type classificationResult struct {
 type classifyOutput struct {
 	Mode         string                 `json:"mode"`
 	ConfigPath   string                 `json:"config_path,omitempty"`
+	ProfileName  string                 `json:"profile_name,omitempty"`
 	LearningPath string                 `json:"learning_path,omitempty"`
 	Results      []classificationResult `json:"results"`
 }

@@ -28,6 +28,7 @@ Downloads/                    Downloads/
 - Gives you a `--dry-run` mode before it changes anything.
 - Lets you undo the last real run if you need to put things back.
 - Can load custom categories from `.gotidy.yaml`, `.gotidy.yml`, or `.gotidy.json`.
+- Can switch named profiles from `.gotidy.profiles.yaml` for work, creative, family, or team setups.
 - Can learn local preferences over time with `--learn`.
 - Can reuse learned preferences and directory heuristics with `--adaptive`.
 - Can inspect ambiguous text-like files with `--content-hints`.
@@ -129,6 +130,31 @@ categories:
 EOF
 
 gotidy ~/Downloads
+```
+
+If you want quick profile switching with shared defaults:
+
+```sh
+cat > ~/Projects/.gotidy.profiles.yaml <<'EOF'
+profiles:
+  work:
+    backup: true
+    duplicate_strategy: rename
+    include: [*.pdf, *.docx, *.csv]
+    categories:
+      reports:
+        extensions: [pdf]
+        destination: Work/Reports
+  creative:
+    by_date: true
+    categories:
+      renders:
+        extensions: [blend, psd, png]
+        destination: Creative/Renders
+EOF
+
+gotidy --profile work ~/Projects
+gotidy --profile creative --list-categories ~/Projects
 ```
 
 If you want gotidy to learn your local preferences and reuse them later:
@@ -292,6 +318,7 @@ Flags:
 | `--large-files-over SIZE` | Set the size threshold used by `--by-size` | `gotidy --by-size --large-files-over 250MB ~/Downloads` |
 | `--learn` | Update `.gotidy-learning.json` from successful real runs | `gotidy --learn ~/Downloads` |
 | `--list-categories` | Show the active extension map, including custom config overrides | `gotidy --list-categories ~/Downloads` |
+| `--profile NAME` | Activate a named profile from `.gotidy.profiles.yaml` or `.json` | `gotidy --profile work ~/Downloads` |
 | `-n`, `--dry-run` | Preview the move plan without touching the filesystem | `gotidy --dry-run ~/Downloads` |
 | `--overwrite` | Replace an existing destination file after interactive confirmation | `gotidy --interactive --overwrite ~/Downloads` |
 | `--rename` | Keep moving colliding files by adding `_1`, `_2`, and so on | `gotidy --rename ~/Downloads` |
@@ -365,10 +392,26 @@ These flags change where files land after category resolution.
 
 | Flag | Behavior | Example use |
 | --- | --- | --- |
-| `--config` | Override built-in category mapping and destinations | Send `jpg` and `dng` into `Projects/Photography/` |
+| `--config` | Override built-in category mapping and destinations from a specific file | Load a central `~/.config/gotidy/work.yaml` instead of directory-local config |
+| `--profile` | Activate a named preset of categories, filters, backup, and duplicate rules | Switch between `work` and `creative` folder layouts with one flag |
 | `--by-date` | Add `YYYY/MM` subfolders under the destination | Split years of downloads into smaller monthly buckets |
 | `--by-size` | Prefix large files with `large_files/` | Separate space-heavy media from normal category folders |
 | `--large-files-over` | Tune the threshold used by `--by-size` | Treat anything above `250MB` as a large file |
+
+### Profiles and shared defaults
+
+Use profiles when you want multiple organization modes without rewriting flags
+every time.
+
+Typical uses:
+
+- `gotidy --profile work ~/Downloads` for stricter filters, backups, and business-specific categories
+- `gotidy --profile creative ~/Projects` for date bucketing and media-heavy destinations
+- commit `.gotidy.profiles.yaml` into a repo so a family or team shares the same folder rules
+
+Profile values act as defaults. Direct CLI flags still win. For example, if the
+`work` profile enables backups but you run `gotidy --profile work --dry-run`,
+you still get a dry run with no archive created.
 
 ### Reporting and inspection
 
@@ -390,6 +433,13 @@ These flags help when scripting, auditing, or just learning what gotidy would do
 - `.gotidy.yaml`
 - `.gotidy.yml`
 - `.gotidy.json`
+- `.gotidy.profiles.yaml`
+- `.gotidy.profiles.yml`
+- `.gotidy.profiles.json`
+
+If more than one of these exists, `gotidy` merges them. That lets you keep
+basic categories in `.gotidy.yaml` and shared named profiles in
+`.gotidy.profiles.yaml`.
 
 YAML example:
 
@@ -422,6 +472,33 @@ JSON example:
 }
 ```
 
+Profile YAML example:
+
+```yaml
+profiles:
+  work:
+    backup: true
+    duplicate_strategy: rename
+    include: [*.pdf, *.docx, *.csv]
+    ignore_patterns:
+      - keep-*
+    categories:
+      reports:
+        extensions: [pdf]
+        destination: Work/Reports
+  creative:
+    by_date: true
+    by_size: true
+    large_files_over: 250MB
+    categories:
+      renders:
+        extensions: [blend, psd, png]
+        destination: Creative/Renders
+```
+
+The profile file is a good candidate to commit into a repo when you want a
+shared default layout for a team or household.
+
 ## Example output
 
 Preview a run:
@@ -452,6 +529,17 @@ By category:
   videos:        5 (680 MB)
 ```
 
+Run with a shared profile:
+
+```sh
+$ gotidy --profile work ~/Projects/Shared
+Organized 3 files in /Users/alex/Projects/Shared.
+Renamed 1 file to avoid collisions.
+Created backup at /Users/alex/Projects/Shared/.gotidy-backup-20260423-153000.zip.
+Loaded config from /Users/alex/Projects/Shared/.gotidy.profiles.yaml.
+Active profile: work.
+```
+
 Classify filenames without moving them:
 
 ```sh
@@ -471,6 +559,18 @@ Categories:
   images:                        avif, bmp, gif, heic, jpeg, jpg, png, webp
   other:                         no mapped extensions
 Loaded config from /Users/alex/Downloads/.gotidy.yaml.
+```
+
+Inspect the active category mapping for a specific profile:
+
+```sh
+$ gotidy --profile creative --list-categories ~/Projects
+Categories:
+  renders -> Creative/Renders: blend, png, psd
+  images:                     avif, bmp, gif, heic, jpeg, jpg, png, webp
+  other:                      no mapped extensions
+Loaded config from /Users/alex/Projects/.gotidy.profiles.yaml.
+Active profile: creative.
 ```
 
 Classify with adaptive content hints:

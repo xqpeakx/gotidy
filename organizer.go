@@ -26,6 +26,7 @@ type Options struct {
 	Resolver           CategoryResolver
 	Categorizer        *Categorizer
 	ConfigPath         string
+	ProfileName        string
 	IgnoreFilePath     string
 	Logf               func(format string, args ...any)
 	Prompt             func(prompt string) (string, error)
@@ -44,6 +45,7 @@ type Summary struct {
 	ByCategoryBytes map[string]int64
 	BackupPath      string
 	ConfigPath      string
+	ProfileName     string
 	IgnoreFilePath  string
 	LearningPath    string
 }
@@ -67,6 +69,7 @@ func Organize(dir string, opts Options) (Summary, error) {
 		ByCategory:      make(map[string]int),
 		ByCategoryBytes: make(map[string]int64),
 		ConfigPath:      opts.ConfigPath,
+		ProfileName:     opts.ProfileName,
 		IgnoreFilePath:  opts.IgnoreFilePath,
 	}
 	if opts.Categorizer != nil {

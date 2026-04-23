@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -154,6 +155,42 @@ func TestRun_ListCategories_WithConfig(t *testing.T) {
 	}
 }
 
+func TestRun_ListCategories_WithProfile(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".gotidy.profiles.yaml")
+	data := `profiles:
+  creative:
+    categories:
+      renders:
+        extensions: [blend, psd]
+        destination: Creative/Renders
+`
+	if err := os.WriteFile(configPath, []byte(data), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+
+	code := run([]string{"--list-categories", "--profile", "creative", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("run(--list-categories --profile) exit code = %d, want 0", code)
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "renders -> Creative/Renders:") {
+		t.Fatalf("stdout = %q, want profile category line", output)
+	}
+	if !strings.Contains(output, "Active profile: creative.") {
+		t.Fatalf("stdout = %q, want active profile note", output)
+	}
+	if !strings.Contains(output, "Loaded config from "+configPath+".") {
+		t.Fatalf("stdout = %q, want profile config path note", output)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
 func TestRun_Classify_WithConfig(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, ".gotidy.yaml")
@@ -179,6 +216,42 @@ func TestRun_Classify_WithConfig(t *testing.T) {
 	}
 	if !strings.Contains(output, "report.pdf: documents") {
 		t.Fatalf("stdout = %q, want built-in classification", output)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRun_Classify_WithProfile(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".gotidy.profiles.yaml")
+	data := `profiles:
+  work:
+    categories:
+      reports:
+        extensions: [pdf]
+        destination: Work/Reports
+`
+	if err := os.WriteFile(configPath, []byte(data), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+
+	code := run([]string{"--classify", "--config", configPath, "--profile", "work", "invoice.pdf", "notes.txt"}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("run(--classify --profile) exit code = %d, want 0", code)
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "invoice.pdf: reports -> Work/Reports") {
+		t.Fatalf("stdout = %q, want profile classification", output)
+	}
+	if !strings.Contains(output, "notes.txt: documents") {
+		t.Fatalf("stdout = %q, want builtin fallback classification", output)
+	}
+	if !strings.Contains(output, "Active profile: work.") {
+		t.Fatalf("stdout = %q, want active profile note", output)
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
@@ -342,6 +415,86 @@ func TestRun_StatsAndBackup(t *testing.T) {
 	}
 	if !strings.Contains(output, "Filtered") && !strings.Contains(output, "Examined 1 entry.") {
 		t.Fatalf("stdout = %q, want stats header", output)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRun_ProfileAppliesOrganizeDefaults(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".gotidy.profiles.yaml")
+	data := `profiles:
+  work:
+    backup: true
+    by_date: true
+    include: [*.pdf]
+    ignore_patterns:
+      - keep-*
+    duplicate_strategy: rename
+    categories:
+      reports:
+        extensions: [pdf]
+        destination: Work/Reports
+`
+	if err := os.WriteFile(configPath, []byte(data), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	writeFiles(t, dir, "invoice.pdf", "keep-draft.pdf", "photo.jpg")
+
+	info, err := os.Stat(filepath.Join(dir, "invoice.pdf"))
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	year, month, _ := info.ModTime().Date()
+	destinationDir := filepath.Join(dir, "Work", "Reports", fmt.Sprintf("%04d", year), fmt.Sprintf("%02d", int(month)))
+	if err := os.MkdirAll(destinationDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	writeFiles(t, destinationDir, "invoice.pdf")
+
+	var stdout, stderr bytes.Buffer
+
+	code := run([]string{"--profile", "work", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("run(--profile work) exit code = %d, want 0", code)
+	}
+
+	if _, err := os.Stat(filepath.Join(destinationDir, "invoice_1.pdf")); err != nil {
+		t.Fatalf("renamed destination should exist: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(destinationDir, "invoice.pdf")); err != nil {
+		t.Fatalf("existing destination should remain: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "keep-draft.pdf")); err != nil {
+		t.Fatalf("ignored file should remain: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "photo.jpg")); err != nil {
+		t.Fatalf("non-included file should remain: %v", err)
+	}
+
+	backups, err := filepath.Glob(filepath.Join(dir, ".gotidy-backup-*.zip"))
+	if err != nil {
+		t.Fatalf("Glob: %v", err)
+	}
+	if len(backups) != 1 {
+		t.Fatalf("len(backups) = %d, want 1", len(backups))
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Renamed 1 file to avoid collisions.") {
+		t.Fatalf("stdout = %q, want rename summary", output)
+	}
+	if !strings.Contains(output, "Created backup at ") {
+		t.Fatalf("stdout = %q, want backup summary", output)
+	}
+	if !strings.Contains(output, "Active profile: work.") {
+		t.Fatalf("stdout = %q, want active profile note", output)
+	}
+	if !strings.Contains(output, "Loaded config from "+configPath+".") {
+		t.Fatalf("stdout = %q, want config path note", output)
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
