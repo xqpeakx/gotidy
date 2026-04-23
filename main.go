@@ -10,7 +10,7 @@ import (
 )
 
 // version is set at build time via -ldflags "-X main.version=...".
-var version = "dev"
+var version = "alpha_0.0.1"
 
 const usage = `gotidy - sort files in a directory into subfolders by type
 
