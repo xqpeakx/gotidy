@@ -9,7 +9,7 @@ import (
 	"sort"
 )
 
-var version = "alpha_0.0.1"
+var version = "alpha_0.0.2"
 
 const usage = `gotidy - sort files in a directory into subfolders by type
 
