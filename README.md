@@ -39,6 +39,14 @@ Downloads/                    Downloads/
 go install github.com/xqpeakx/gotidy@latest
 ```
 
+This installs from GitHub and the Go module proxy, not from your local clone.
+If you just changed code in a checkout and want to install that exact local
+state, run this inside the repo instead:
+
+```sh
+go install .
+```
+
 By default, Go installs the binary to `$(go env GOPATH)/bin` unless you have
 set `GOBIN`.
 
