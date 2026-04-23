@@ -17,6 +17,7 @@ type CategoryDefinition struct {
 type CategoryRule struct {
 	Name        string `json:"name"`
 	Destination string `json:"destination"`
+	Origin      string `json:"origin,omitempty"`
 }
 
 type CategoryResolver struct {
@@ -184,7 +185,7 @@ func mustDefaultCategoryResolver() CategoryResolver {
 func NewCategoryResolver(config *Config) (CategoryResolver, error) {
 	byExtension := make(map[string]CategoryRule, len(defaultCategoryByExtension))
 	for ext, category := range defaultCategoryByExtension {
-		byExtension[ext] = CategoryRule{Name: category, Destination: category}
+		byExtension[ext] = CategoryRule{Name: category, Destination: category, Origin: "builtin"}
 	}
 
 	if config == nil {
@@ -207,7 +208,7 @@ func NewCategoryResolver(config *Config) (CategoryResolver, error) {
 			if normalized == "" {
 				return CategoryResolver{}, errInvalidConfig("category %q contains an empty extension", name)
 			}
-			byExtension[normalized] = CategoryRule{Name: name, Destination: destination}
+			byExtension[normalized] = CategoryRule{Name: name, Destination: destination, Origin: "config"}
 		}
 	}
 
@@ -225,17 +226,17 @@ func CategoryFor(filename string) string {
 func (r CategoryResolver) Resolve(filename string) CategoryRule {
 	base := filepath.Base(filename)
 	if strings.HasPrefix(base, ".") {
-		return CategoryRule{Name: OtherCategory, Destination: OtherCategory}
+		return CategoryRule{Name: OtherCategory, Destination: OtherCategory, Origin: "builtin"}
 	}
 
 	ext := normalizeExtension(filepath.Ext(base))
 	if ext == "" {
-		return CategoryRule{Name: OtherCategory, Destination: OtherCategory}
+		return CategoryRule{Name: OtherCategory, Destination: OtherCategory, Origin: "builtin"}
 	}
 	if category, ok := r.byExtension[ext]; ok {
 		return category
 	}
-	return CategoryRule{Name: OtherCategory, Destination: OtherCategory}
+	return CategoryRule{Name: OtherCategory, Destination: OtherCategory, Origin: "builtin"}
 }
 
 func CategoryDefinitionsList() []CategoryDefinition {

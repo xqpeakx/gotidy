@@ -28,6 +28,9 @@ Downloads/                    Downloads/
 - Gives you a `--dry-run` mode before it changes anything.
 - Lets you undo the last real run if you need to put things back.
 - Can load custom categories from `.gotidy.yaml`, `.gotidy.yml`, or `.gotidy.json`.
+- Can learn local preferences over time with `--learn`.
+- Can reuse learned preferences and directory heuristics with `--adaptive`.
+- Can inspect ambiguous text-like files with `--content-hints`.
 - Can skip, rename, or interactively overwrite duplicate destinations.
 - Can filter with `--include`, `--exclude`, and `.gotidyignore`.
 - Can bucket files by date and large-file size.
@@ -126,6 +129,20 @@ categories:
 EOF
 
 gotidy ~/Downloads
+```
+
+If you want gotidy to learn your local preferences and reuse them later:
+
+```sh
+gotidy --learn --config ~/.config/gotidy/work.yaml ~/Downloads
+gotidy --adaptive ~/Downloads
+```
+
+If you want cautious content-based hints for ambiguous text files:
+
+```sh
+gotidy --adaptive --content-hints ~/Downloads
+gotidy --adaptive --classify budget.txt notes.txt
 ```
 
 If you want smarter duplicate handling:
@@ -260,17 +277,20 @@ Flags:
 
 | Flag | What it does | Example |
 | --- | --- | --- |
+| `--adaptive` | Use learned preferences plus directory/file heuristics before falling back to built-ins | `gotidy --adaptive ~/Downloads` |
 | `--backup` | Create a zip snapshot before any real moves happen | `gotidy --backup ~/Downloads` |
 | `--by-date` | Add `YYYY/MM` folders under the chosen destination | `gotidy --by-date ~/Downloads` |
 | `--by-size` | Route large files under `large_files/` before their category path | `gotidy --by-size ~/Downloads` |
 | `--classify` | Show how names would be categorized without moving anything | `gotidy --classify photo.jpg report.pdf` |
 | `--config PATH` | Load a specific config file instead of auto-detecting one in the target directory | `gotidy --config ~/.config/gotidy/work.yaml ~/Downloads` |
+| `--content-hints` | Inspect ambiguous text-like files for tabular/code/document hints | `gotidy --adaptive --content-hints ~/Downloads` |
 | `--exclude PATTERNS` | Skip matching top-level filenames | `gotidy --exclude "*.tmp,*.crdownload" ~/Downloads` |
 | `--ignore-file PATH` | Read ignore rules from a custom file instead of `.gotidyignore` | `gotidy --ignore-file ~/.config/gotidy/ignore ~/Downloads` |
 | `--include PATTERNS` | Only move matching top-level filenames | `gotidy --include "*.pdf,*.docx" ~/Downloads` |
 | `--interactive` | Prompt before moves and on collisions | `gotidy --interactive ~/Downloads` |
 | `--json` | Emit machine-readable output for scripts and automation | `gotidy --dry-run --json ~/Downloads` |
 | `--large-files-over SIZE` | Set the size threshold used by `--by-size` | `gotidy --by-size --large-files-over 250MB ~/Downloads` |
+| `--learn` | Update `.gotidy-learning.json` from successful real runs | `gotidy --learn ~/Downloads` |
 | `--list-categories` | Show the active extension map, including custom config overrides | `gotidy --list-categories ~/Downloads` |
 | `-n`, `--dry-run` | Preview the move plan without touching the filesystem | `gotidy --dry-run ~/Downloads` |
 | `--overwrite` | Replace an existing destination file after interactive confirmation | `gotidy --interactive --overwrite ~/Downloads` |
@@ -301,6 +321,23 @@ Use these first when you are working on a directory you care about.
 | `--backup` | You want a filesystem snapshot beyond undo metadata | Creates a hidden zip file in the target directory before moving files |
 | `--undo` | You want to reverse the last real organize run in that directory | Moves files back to their original top-level locations when those paths are still free |
 | `--interactive` | You want to approve moves manually | Prompts for each move and for each collision decision |
+
+### Adaptive categorization
+
+These flags add cautious local intelligence without external services.
+
+| Flag | Behavior | Example use |
+| --- | --- | --- |
+| `--learn` | Persist successful category and destination choices into `.gotidy-learning.json` | Train gotidy on a custom work folder layout over a few runs |
+| `--adaptive` | Apply learned extension/token preferences plus directory/file relationship heuristics | Reuse those learned choices without keeping a config file around |
+| `--content-hints` | Inspect ambiguous text-like files such as `.txt`, `.log`, or extensionless files | Turn `budget.txt` with CSV-like headers into `spreadsheets` instead of plain `documents` |
+
+Adaptive matching is still conservative:
+
+- explicit config wins first
+- learned preferences come next
+- then directory/file relationship heuristics
+- built-in extension rules remain the fallback
 
 ### Duplicate handling
 
@@ -434,6 +471,27 @@ Categories:
   images:                        avif, bmp, gif, heic, jpeg, jpg, png, webp
   other:                         no mapped extensions
 Loaded config from /Users/alex/Downloads/.gotidy.yaml.
+```
+
+Classify with adaptive content hints:
+
+```sh
+$ gotidy --adaptive --content-hints --classify budget.txt notes.txt
+budget.txt: spreadsheets (content-hint: content looks like a delimited table)
+notes.txt: documents
+Learning data at /Users/alex/.gotidy-learning.json.
+```
+
+Teach gotidy a preference and reuse it later:
+
+```sh
+$ gotidy --learn --config ~/.config/gotidy/work.yaml ~/Downloads
+Organized 6 files in /Users/alex/Downloads.
+Learning data at /Users/alex/Downloads/.gotidy-learning.json.
+
+$ gotidy --adaptive --classify sales.csv
+sales.csv: data_files -> Work/Data (learned-extension: learned .csv -> Work/Data from prior runs)
+Learning data at /Users/alex/Downloads/.gotidy-learning.json.
 ```
 
 Use interactive overwrite mode on a collision:

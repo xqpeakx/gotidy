@@ -24,6 +24,7 @@ type Options struct {
 	ExcludePatterns    []string
 	IgnorePatterns     []string
 	Resolver           CategoryResolver
+	Categorizer        *Categorizer
 	ConfigPath         string
 	IgnoreFilePath     string
 	Logf               func(format string, args ...any)
@@ -37,12 +38,14 @@ type Summary struct {
 	Overwritten     int
 	Skipped         int
 	Filtered        int
+	AdaptiveMatches int
 	TotalBytes      int64
 	ByCategory      map[string]int
 	ByCategoryBytes map[string]int64
 	BackupPath      string
 	ConfigPath      string
 	IgnoreFilePath  string
+	LearningPath    string
 }
 
 type movePlan struct {
@@ -51,6 +54,8 @@ type movePlan struct {
 	DestinationPath string
 	DestinationRel  string
 	Category        string
+	Rule            CategoryRule
+	Decision        CategoryDecision
 	Bytes           int64
 	Renamed         bool
 	Overwrite       bool
@@ -63,6 +68,9 @@ func Organize(dir string, opts Options) (Summary, error) {
 		ByCategoryBytes: make(map[string]int64),
 		ConfigPath:      opts.ConfigPath,
 		IgnoreFilePath:  opts.IgnoreFilePath,
+	}
+	if opts.Categorizer != nil {
+		summary.LearningPath = opts.Categorizer.LearningPath()
 	}
 	moves := make([]moveRecord, 0)
 
@@ -158,9 +166,15 @@ func Organize(dir string, opts Options) (Summary, error) {
 				To:       filepath.ToSlash(plan.DestinationRel),
 				Category: plan.Category,
 			})
+			if opts.Categorizer != nil {
+				opts.Categorizer.Observe(plan.Name, plan.Rule)
+			}
 		}
 
 		summary.Moved++
+		if plan.Decision.Source != "" && plan.Decision.Source != "builtin" && plan.Decision.Source != "config" {
+			summary.AdaptiveMatches++
+		}
 		if plan.Renamed {
 			summary.Renamed++
 		}
@@ -174,6 +188,11 @@ func Organize(dir string, opts Options) (Summary, error) {
 
 	if err := saveOrganizeState(dir, moves); err != nil {
 		return summary, err
+	}
+	if !opts.DryRun && opts.Categorizer != nil {
+		if err := opts.Categorizer.Save(); err != nil {
+			return summary, err
+		}
 	}
 
 	return summary, nil
@@ -189,12 +208,22 @@ func normalizeOptions(opts Options) Options {
 	if opts.LargeFileThreshold <= 0 {
 		opts.LargeFileThreshold = defaultLargeFileThreshold
 	}
+	if opts.Categorizer == nil {
+		categorizer, err := NewCategorizer(".", opts.Resolver, false, false, false)
+		if err == nil {
+			opts.Categorizer = categorizer
+		}
+	}
 	return opts
 }
 
 func buildMovePlan(root string, info os.FileInfo, opts Options) (movePlan, bool, error) {
 	name := info.Name()
-	rule := opts.Resolver.Resolve(name)
+	decision, err := opts.Categorizer.Classify(filepath.Join(root, name))
+	if err != nil {
+		return movePlan{}, false, err
+	}
+	rule := decision.Rule
 	relativeDir := rule.Destination
 	if relativeDir == "" {
 		relativeDir = rule.Name
@@ -280,6 +309,8 @@ func buildMovePlan(root string, info os.FileInfo, opts Options) (movePlan, bool,
 		DestinationPath: targetPath,
 		DestinationRel:  destinationRel,
 		Category:        rule.Name,
+		Rule:            rule,
+		Decision:        decision,
 		Bytes:           info.Size(),
 		Renamed:         renamed,
 		Overwrite:       overwrite,

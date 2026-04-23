@@ -185,6 +185,33 @@ func TestRun_Classify_WithConfig(t *testing.T) {
 	}
 }
 
+func TestRun_Classify_AdaptiveContentHints(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "budget.txt")
+	data := "month,amount,balance\nJanuary,100,1000\nFebruary,120,1120\n"
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+
+	code := run([]string{"--classify", "--adaptive", "--content-hints", path}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("run(--classify --adaptive --content-hints) exit code = %d, want 0", code)
+	}
+	output := stdout.String()
+	if !strings.Contains(output, "budget.txt: spreadsheets") {
+		t.Fatalf("stdout = %q, want spreadsheets classification", output)
+	}
+	if !strings.Contains(output, "content-hint") {
+		t.Fatalf("stdout = %q, want content hint source", output)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
 func TestRun_ClassifyRequiresArgs(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
