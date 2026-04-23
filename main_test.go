@@ -44,6 +44,34 @@ func TestRun_Version(t *testing.T) {
 	}
 }
 
+func TestRun_Undo(t *testing.T) {
+	dir := t.TempDir()
+	writeFiles(t, dir, "photo.jpg")
+
+	if _, err := Organize(dir, Options{}); err != nil {
+		t.Fatalf("Organize: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+
+	code := run([]string{"--undo", dir}, &stdout, &stderr)
+
+	if code != 0 {
+		t.Fatalf("run(--undo) exit code = %d, want 0", code)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+
+	output := stdout.String()
+	if !strings.Contains(output, "Restored 1 file in "+dir+".") {
+		t.Fatalf("stdout = %q, want undo summary", output)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "photo.jpg")); err != nil {
+		t.Fatalf("photo.jpg should be restored after undo: %v", err)
+	}
+}
+
 func TestRun_TooManyArgs(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 
@@ -105,6 +133,24 @@ func TestRun_NonExistentDirectory(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "error: cannot access") {
 		t.Fatalf("stderr = %q, want access error", stderr.String())
+	}
+}
+
+func TestRun_UndoWithoutUndoData(t *testing.T) {
+	dir := t.TempDir()
+
+	var stdout, stderr bytes.Buffer
+
+	code := run([]string{"--undo", dir}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("run(--undo missing state) exit code = %d, want 1", code)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "no undo data found") {
+		t.Fatalf("stderr = %q, want missing undo data error", stderr.String())
 	}
 }
 

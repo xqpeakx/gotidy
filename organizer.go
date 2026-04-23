@@ -21,13 +21,10 @@ type Summary struct {
 
 func Organize(dir string, opts Options) (Summary, error) {
 	summary := Summary{ByCategory: make(map[string]int)}
+	moves := make([]moveRecord, 0)
 
-	info, err := os.Stat(dir)
-	if err != nil {
-		return summary, fmt.Errorf("cannot access %q: %w", dir, err)
-	}
-	if !info.IsDir() {
-		return summary, fmt.Errorf("%q is not a directory", dir)
+	if err := ensureDirectory(dir); err != nil {
+		return summary, err
 	}
 
 	entries, err := os.ReadDir(dir)
@@ -53,26 +50,45 @@ func Organize(dir string, opts Options) (Summary, error) {
 			summary.Skipped++
 			continue
 		} else if !errors.Is(err, os.ErrNotExist) {
-			return summary, fmt.Errorf("cannot stat %q: %w", dstPath, err)
+			return summary, saveOrganizeStateOnError(dir, moves, fmt.Errorf("cannot stat %q: %w", dstPath, err))
 		}
 
 		if opts.DryRun {
 			opts.logf("[dry-run] would move %s to %s/", name, category)
 		} else {
 			if err := os.MkdirAll(dstDir, 0o755); err != nil {
-				return summary, fmt.Errorf("cannot create %q: %w", dstDir, err)
+				return summary, saveOrganizeStateOnError(dir, moves, fmt.Errorf("cannot create %q: %w", dstDir, err))
 			}
 			if err := os.Rename(srcPath, dstPath); err != nil {
-				return summary, fmt.Errorf("cannot move %q to %q: %w", srcPath, dstPath, err)
+				return summary, saveOrganizeStateOnError(dir, moves, fmt.Errorf("cannot move %q to %q: %w", srcPath, dstPath, err))
 			}
 			opts.logf("moved %s to %s/", name, category)
+			moves = append(moves, moveRecord{
+				From: filepath.ToSlash(name),
+				To:   filepath.ToSlash(filepath.Join(category, name)),
+			})
 		}
 
 		summary.Moved++
 		summary.ByCategory[category]++
 	}
 
+	if err := saveOrganizeState(dir, moves); err != nil {
+		return summary, err
+	}
+
 	return summary, nil
+}
+
+func ensureDirectory(dir string) error {
+	info, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("cannot access %q: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%q is not a directory", dir)
+	}
+	return nil
 }
 
 func shouldSkip(entry os.DirEntry) bool {

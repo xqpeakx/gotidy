@@ -21,11 +21,13 @@ If you do not pass a directory, gotidy uses the current one.
 
 What it does:
   - moves top-level files into folders like images/, documents/, code/, and more
+  - can undo the last real run with --undo
   - leaves subdirectories, hidden files, and symlinks alone
   - skips files when the destination already has the same name
 
 Flags:
   -n, --dry-run    Show what would move without changing anything
+  -u, --undo       Undo the last organize run in this directory
   -v, --verbose    Print each decision as gotidy works
   -V, --version    Show the gotidy version and exit
   -h, --help       Show this help text
@@ -33,6 +35,7 @@ Flags:
 Examples:
   gotidy ~/Downloads
   gotidy --dry-run ~/Downloads
+  gotidy --undo ~/Downloads
   gotidy -v .
 `
 
@@ -47,11 +50,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 	var (
 		dryRun      bool
+		undo        bool
 		verbose     bool
 		showVersion bool
 	)
 	fs.BoolVar(&dryRun, "dry-run", false, "preview moves without touching files")
 	fs.BoolVar(&dryRun, "n", false, "preview moves without touching files (shorthand)")
+	fs.BoolVar(&undo, "undo", false, "undo the last organize run in this directory")
+	fs.BoolVar(&undo, "u", false, "undo the last organize run in this directory (shorthand)")
 	fs.BoolVar(&verbose, "verbose", false, "print every considered file")
 	fs.BoolVar(&verbose, "v", false, "print every considered file (shorthand)")
 	fs.BoolVar(&showVersion, "version", false, "print the gotidy version")
@@ -88,13 +94,25 @@ func run(args []string, stdout, stderr io.Writer) int {
 		},
 	}
 
-	summary, err := Organize(dir, opts)
+	var (
+		summary Summary
+		err     error
+	)
+	if undo {
+		summary, err = Undo(dir, opts)
+	} else {
+		summary, err = Organize(dir, opts)
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
 	}
 
-	printSummary(stdout, dir, summary, dryRun)
+	if undo {
+		printUndoSummary(stdout, dir, summary, dryRun)
+	} else {
+		printSummary(stdout, dir, summary, dryRun)
+	}
 	return 0
 }
 
@@ -125,16 +143,56 @@ func printSummary(out io.Writer, dir string, s Summary, dryRun bool) {
 		return
 	}
 
+	printCategoryBreakdown(out, s.ByCategory)
+}
+
+func printUndoSummary(out io.Writer, dir string, s Summary, dryRun bool) {
+	verb := "Restored"
+	if dryRun {
+		verb = "Dry run: would restore"
+	}
+
+	if s.Moved == 0 {
+		prefix := "Nothing to undo in"
+		if dryRun {
+			prefix = "Dry run: nothing to undo in"
+		}
+		if s.Skipped > 0 {
+			prefix = "No files were restored in"
+			if dryRun {
+				prefix = "Dry run: no files would be restored in"
+			}
+		}
+		fmt.Fprintf(out, "%s %s.\n", prefix, dir)
+		if s.Skipped > 0 {
+			fmt.Fprintf(out, "Could not restore %s.\n", countLabel(s.Skipped, "file", "files"))
+		}
+		return
+	}
+
+	fmt.Fprintf(out, "%s %s in %s.\n", verb, countLabel(s.Moved, "file", "files"), dir)
+	if s.Skipped > 0 {
+		fmt.Fprintf(out, "Could not restore %s.\n", countLabel(s.Skipped, "file", "files"))
+	}
+
+	if len(s.ByCategory) == 0 {
+		return
+	}
+
+	printCategoryBreakdown(out, s.ByCategory)
+}
+
+func printCategoryBreakdown(out io.Writer, byCategory map[string]int) {
 	fmt.Fprintln(out, "By category:")
 
-	categories := make([]string, 0, len(s.ByCategory))
-	for c := range s.ByCategory {
+	categories := make([]string, 0, len(byCategory))
+	for c := range byCategory {
 		categories = append(categories, c)
 	}
 	sort.Strings(categories)
 
 	for _, c := range categories {
-		fmt.Fprintf(out, "  %-14s %d\n", c+":", s.ByCategory[c])
+		fmt.Fprintf(out, "  %-14s %d\n", c+":", byCategory[c])
 	}
 }
 

@@ -26,6 +26,7 @@ Downloads/                    Downloads/
 
 - Cleans up a folder in one command.
 - Gives you a `--dry-run` mode before it changes anything.
+- Lets you undo the last real run if you need to put things back.
 - Leaves hidden files, subdirectories, and symlinks alone.
 - Never overwrites an existing file in the destination folder.
 - Uses only the Go standard library.
@@ -97,6 +98,12 @@ If you want to see every decision as it happens:
 gotidy --verbose ~/Downloads
 ```
 
+If you need to restore the last real run in that directory:
+
+```sh
+gotidy --undo ~/Downloads
+```
+
 If you do not pass a directory, `gotidy` uses the current one.
 
 ## What it sorts
@@ -145,6 +152,10 @@ in the same place.
 
 If you are organizing a folder you care about, start with `--dry-run`.
 
+`--undo` restores only the last real run for that directory. If new files now
+occupy the original location, `gotidy` will leave those conflicts alone rather
+than overwrite them.
+
 ## Usage
 
 ```text
@@ -156,6 +167,7 @@ Flags:
 | Flag | Description |
 | --- | --- |
 | `-n`, `--dry-run` | Show what would move without changing anything |
+| `-u`, `--undo` | Restore the last real run in this directory |
 | `-v`, `--verbose` | Print each decision as gotidy works |
 | `-V`, `--version` | Show the version and exit |
 | `-h`, `--help` | Show the help text |
