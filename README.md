@@ -38,6 +38,18 @@ Downloads/                    Downloads/
 go install github.com/xqpeakx/gotidy@latest
 ```
 
+By default, Go installs the binary to `$(go env GOPATH)/bin` unless you have
+set `GOBIN`.
+
+If that directory is not already on your `PATH`, add it:
+
+```sh
+echo 'export PATH="$PATH:$(go env GOPATH)/bin"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+If you use `bash`, add the same line to `~/.bashrc` instead.
+
 ### Build from source
 
 ```sh
@@ -46,8 +58,24 @@ cd gotidy
 go build -o gotidy .
 ```
 
-If you want to run it like a normal command, move the binary somewhere on
-your `PATH`.
+Then move the binary to a directory on your `PATH`. For example:
+
+```sh
+sudo mv gotidy /usr/local/bin/gotidy
+```
+
+If `/usr/local/bin` is not on your `PATH`, add it:
+
+```sh
+echo 'export PATH="$PATH:/usr/local/bin"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Check that it worked:
+
+```sh
+gotidy --version
+```
 
 ## Quick start
 
