@@ -258,36 +258,92 @@ gotidy --list-categories [flags] [directory]
 
 Flags:
 
-| Flag | Description |
-| --- | --- |
-| `--backup` | Create a zip backup before organizing |
-| `--by-date` | Add `YYYY/MM` subdirectories under each destination |
-| `--by-size` | Move large files under `large_files/` |
-| `--classify` | Classify the provided filenames without moving anything |
-| `--config PATH` | Load a custom config file explicitly |
-| `--exclude PATTERNS` | Skip matching filenames |
-| `--ignore-file PATH` | Load ignore patterns from a custom path |
-| `--include PATTERNS` | Only move matching filenames |
-| `--interactive` | Prompt before moving or overwriting files |
-| `--json` | Print machine-readable JSON output |
-| `--large-files-over SIZE` | Threshold used with `--by-size` |
-| `--list-categories` | Show the active category and extension mapping |
-| `-n`, `--dry-run` | Show what would move without changing anything |
-| `--overwrite` | Overwrite colliding destinations after interactive confirmation |
-| `--rename` | Rename colliding destinations with `_N` suffixes |
-| `--rename-on-collision` | Alias for `--rename` |
-| `--skip` | Skip colliding destinations |
-| `--stats` | Print extra count and size statistics |
-| `-u`, `--undo` | Restore the last real run in this directory |
-| `--update` | Install the newest `main` branch build with `go install` |
-| `-v`, `--verbose` | Print each decision as gotidy works |
-| `-V`, `--version` | Show the version and exit |
-| `-h`, `--help` | Show the help text |
+| Flag | What it does | Example |
+| --- | --- | --- |
+| `--backup` | Create a zip snapshot before any real moves happen | `gotidy --backup ~/Downloads` |
+| `--by-date` | Add `YYYY/MM` folders under the chosen destination | `gotidy --by-date ~/Downloads` |
+| `--by-size` | Route large files under `large_files/` before their category path | `gotidy --by-size ~/Downloads` |
+| `--classify` | Show how names would be categorized without moving anything | `gotidy --classify photo.jpg report.pdf` |
+| `--config PATH` | Load a specific config file instead of auto-detecting one in the target directory | `gotidy --config ~/.config/gotidy/work.yaml ~/Downloads` |
+| `--exclude PATTERNS` | Skip matching top-level filenames | `gotidy --exclude "*.tmp,*.crdownload" ~/Downloads` |
+| `--ignore-file PATH` | Read ignore rules from a custom file instead of `.gotidyignore` | `gotidy --ignore-file ~/.config/gotidy/ignore ~/Downloads` |
+| `--include PATTERNS` | Only move matching top-level filenames | `gotidy --include "*.pdf,*.docx" ~/Downloads` |
+| `--interactive` | Prompt before moves and on collisions | `gotidy --interactive ~/Downloads` |
+| `--json` | Emit machine-readable output for scripts and automation | `gotidy --dry-run --json ~/Downloads` |
+| `--large-files-over SIZE` | Set the size threshold used by `--by-size` | `gotidy --by-size --large-files-over 250MB ~/Downloads` |
+| `--list-categories` | Show the active extension map, including custom config overrides | `gotidy --list-categories ~/Downloads` |
+| `-n`, `--dry-run` | Preview the move plan without touching the filesystem | `gotidy --dry-run ~/Downloads` |
+| `--overwrite` | Replace an existing destination file after interactive confirmation | `gotidy --interactive --overwrite ~/Downloads` |
+| `--rename` | Keep moving colliding files by adding `_1`, `_2`, and so on | `gotidy --rename ~/Downloads` |
+| `--rename-on-collision` | Alias for `--rename` | `gotidy --rename-on-collision ~/Downloads` |
+| `--skip` | Keep the default conservative collision policy | `gotidy --skip ~/Downloads` |
+| `--stats` | Print extra counts and total size information | `gotidy --stats ~/Downloads` |
+| `-u`, `--undo` | Restore the most recent real run in this directory | `gotidy --undo ~/Downloads` |
+| `--update` | Install the newest `main` branch build with `go install` | `gotidy --update` |
+| `-v`, `--verbose` | Print every decision as gotidy works | `gotidy --verbose ~/Downloads` |
+| `-V`, `--version` | Show the version and exit | `gotidy --version` |
+| `-h`, `--help` | Show the help text | `gotidy --help` |
 
 `--json` works with normal organize runs, `--dry-run`, `--undo`,
 `--classify`, `--list-categories`, and `--version`.
 
 `--overwrite` requires `--interactive`, so every replacement is confirmed.
+
+## Flag guide
+
+### Preview and safety
+
+Use these first when you are working on a directory you care about.
+
+| Flag | When to use it | Typical result |
+| --- | --- | --- |
+| `--dry-run` | You want to preview the plan before moving anything | Prints the same summary and category breakdown you would get from a real run, but changes nothing |
+| `--backup` | You want a filesystem snapshot beyond undo metadata | Creates a hidden zip file in the target directory before moving files |
+| `--undo` | You want to reverse the last real organize run in that directory | Moves files back to their original top-level locations when those paths are still free |
+| `--interactive` | You want to approve moves manually | Prompts for each move and for each collision decision |
+
+### Duplicate handling
+
+These flags decide what happens when the destination path already exists.
+
+| Flag | Behavior | Example use |
+| --- | --- | --- |
+| `--skip` | Leave the source file in place | Safe default for mixed or unknown folders |
+| `--rename` | Move the file with a suffix like `_1` | Good when you run gotidy repeatedly on the same directory |
+| `--overwrite` | Replace the destination file after prompt confirmation | Useful when the newer top-level file should win |
+
+### Filtering and scope
+
+These flags narrow what gotidy touches.
+
+| Flag | Behavior | Example use |
+| --- | --- | --- |
+| `--include` | Only move files that match one of the patterns | `gotidy --include "*.pdf,*.docx" ~/Downloads` |
+| `--exclude` | Skip files that match one of the patterns | `gotidy --exclude "*.tmp,*.crdownload" ~/Downloads` |
+| `.gotidyignore` / `--ignore-file` | Centralize skip rules you want to keep reusing | Good for things like `Thumbs.db`, `*.part`, or project folders |
+
+### Layout control
+
+These flags change where files land after category resolution.
+
+| Flag | Behavior | Example use |
+| --- | --- | --- |
+| `--config` | Override built-in category mapping and destinations | Send `jpg` and `dng` into `Projects/Photography/` |
+| `--by-date` | Add `YYYY/MM` subfolders under the destination | Split years of downloads into smaller monthly buckets |
+| `--by-size` | Prefix large files with `large_files/` | Separate space-heavy media from normal category folders |
+| `--large-files-over` | Tune the threshold used by `--by-size` | Treat anything above `250MB` as a large file |
+
+### Reporting and inspection
+
+These flags help when scripting, auditing, or just learning what gotidy would do.
+
+| Flag | Behavior | Example use |
+| --- | --- | --- |
+| `--stats` | Print counts plus total organized size | Measure how much a cleanup run actually moved |
+| `--json` | Emit structured output | Pipe into `jq`, shell scripts, or automation |
+| `--classify` | Explain category resolution for sample names | Debug config rules without moving files |
+| `--list-categories` | Print the active extension map | Verify what a directory-local config is overriding |
+| `--verbose` | Log every keep/skip/move decision | Debug why a particular file did or did not move |
 
 ## Config format
 
@@ -325,6 +381,94 @@ JSON example:
       "extensions": ["pdf", "docx"],
       "destination": "Work/Documents"
     }
+  }
+}
+```
+
+## Example output
+
+Preview a run:
+
+```sh
+$ gotidy --dry-run ~/Downloads
+Dry run: would move 4 files in /Users/alex/Downloads.
+By category:
+  archives:      1
+  documents:     1
+  images:        1
+  videos:        1
+```
+
+Run with stats and a backup:
+
+```sh
+$ gotidy --backup --stats ~/Downloads
+Organized 42 files in /Users/alex/Downloads.
+Created backup at /Users/alex/Downloads/.gotidy-backup-20260423-153000.zip.
+Examined 57 entries.
+Filtered 8 entries.
+Total size organized: 2.30 GB.
+By category:
+  documents:     15 (220 MB)
+  images:        20 (1.40 GB)
+  other:         2 (1.20 MB)
+  videos:        5 (680 MB)
+```
+
+Classify filenames without moving them:
+
+```sh
+$ gotidy --classify photo.jpg report.pdf Dockerfile
+photo.jpg: images
+report.pdf: documents
+Dockerfile: other
+```
+
+Inspect the active category mapping when a custom config is present:
+
+```sh
+$ gotidy --list-categories ~/Downloads
+Categories:
+  photos -> Projects/Photography: dng, jpg, png, raw
+  work_docs -> Work/Documents:    docx, pdf
+  images:                        avif, bmp, gif, heic, jpeg, jpg, png, webp
+  other:                         no mapped extensions
+Loaded config from /Users/alex/Downloads/.gotidy.yaml.
+```
+
+Use interactive overwrite mode on a collision:
+
+```sh
+$ gotidy --interactive --overwrite ~/Downloads
+collision for report.pdf at documents/report.pdf [s]kip/[r]ename/[o]verwrite/[q]uit (default: overwrite): o
+Organized 1 file in /Users/alex/Downloads.
+Overwrote 1 file after collision checks.
+```
+
+Consume JSON from a script:
+
+```sh
+$ gotidy --dry-run --json ~/Downloads
+{
+  "mode": "organize",
+  "directory": "/Users/alex/Downloads",
+  "dry_run": true,
+  "examined": 7,
+  "moved": 4,
+  "renamed": 0,
+  "overwritten": 0,
+  "skipped": 0,
+  "filtered": 1,
+  "total_size_bytes": 734003200,
+  "by_category": {
+    "documents": 1,
+    "images": 1,
+    "videos": 2
+  },
+  "by_category_bytes": {
+    "documents": 84512,
+    "images": 420331,
+    "videos": 733498357
   }
 }
 ```
